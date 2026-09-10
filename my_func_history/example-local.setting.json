@@ -1,0 +1,10 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "DefaultEndpointsProtocol=https;AccountName=<YOUR_ACCOUNT_NAME>;AccountKey=<YOUR_ACCOUNT_KEY>;EndpointSuffix=core.windows.net",
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    "MONGO_DB_CONNECTION_STRING": "mongodb+srv://<username>:<password>@aprovia.asj9eo6.mongodb.net/?appName=AprovIA",
+    "MONGO_DB_NAME": "aprovia_db",
+    "QUEUE_NAME": "aprovia-chat-history"
+  }
+}
