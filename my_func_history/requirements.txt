@@ -1,2 +1,4 @@
 azure-functions
 pymongo
+requests
+tzdata

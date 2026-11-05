@@ -1,21 +1,15 @@
 import os
-import base64
-import json
 import logging
 from datetime import datetime, timezone
 import azure.functions as func
-from pymongo import MongoClient
+
+from common import decode_queue_body, get_db
+from notifications import bp as notifications_bp
 
 app = func.FunctionApp()
+app.register_functions(notifications_bp)
 
-# Inicialização global da conexão com o MongoDB (Reutiliza a conexão entre chamadas para melhor performance)
-mongo_conn_string = os.getenv("MONGO_DB_CONNECTION_STRING")
-mongo_db_name = os.getenv("MONGO_DB_NAME")
 queue_name = os.getenv("QUEUE_NAME", "aprovia-chat-history")
-
-mongo_client = None
-if mongo_conn_string:
-    mongo_client = MongoClient(mongo_conn_string)
 
 @app.queue_trigger(
     arg_name="msg", 
@@ -25,17 +19,9 @@ if mongo_conn_string:
 def ConsumirHistoricoQueue(msg: func.QueueMessage) -> None:
     try:
         # 1. Lê a mensagem vinda do Azure Queue Storage
-        if mongo_client is None or not mongo_db_name:
-            raise RuntimeError(
-                "MONGO_DB_CONNECTION_STRING e MONGO_DB_NAME são obrigatórios."
-            )
+        db = get_db()
+        payload = decode_queue_body(msg.get_body())
 
-        body = msg.get_body()
-        try:
-            payload = json.loads(body.decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            payload = json.loads(base64.b64decode(body).decode("utf-8"))
-        
         logging.info(
             "Processando mensagem de histórico para o usuário: %s",
             payload.get("userId"),
@@ -51,7 +37,6 @@ def ConsumirHistoricoQueue(msg: func.QueueMessage) -> None:
             raise ValueError("Payload incompleto recebido da fila.")
 
         # 2. Conecta à coleção 'conversas' do MongoDB
-        db = mongo_client[mongo_db_name]
         collection = db["assistant"]
 
         # 3. Executa a atualização atômica exata no MongoDB

@@ -5,6 +5,14 @@
     "FUNCTIONS_WORKER_RUNTIME": "python",
     "MONGO_DB_CONNECTION_STRING": "mongodb+srv://<username>:<password>@aprovia.asj9eo6.mongodb.net/?appName=AprovIA",
     "MONGO_DB_NAME": "aprovia_db",
-    "QUEUE_NAME": "aprovia-chat-history"
+    "QUEUE_NAME": "aprovia-chat-history",
+    "NOTIFICATIONS_QUEUE_NAME": "aprovia-notifications",
+    "PUSH_TOKENS_COLLECTION": "push_tokens",
+    "PUSH_TICKETS_COLLECTION": "push_tickets",
+    "EXPO_ACCESS_TOKEN": "",
+    "EXPO_ANDROID_CHANNEL_ID": "",
+    "USER_ACTIVITY_COLLECTION": "user_activity",
+    "REMINDER_TIMEZONE": "America/Sao_Paulo",
+    "DAILY_REMINDER_SCHEDULE": "0 0 18 * * *"
   }
 }

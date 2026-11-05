@@ -1,7 +1,11 @@
-# Consumer de histórico de chats
+# Consumers de mensageria
 
-Azure Function responsável por consumir mensagens da fila do Azure Storage
-Queue e atualizar o histórico de conversas no MongoDB.
+Azure Function App com os consumidores das filas do Azure Storage Queue:
+
+- `ConsumirHistoricoQueue`: atualiza o histórico de conversas no MongoDB;
+- `EnviarNotificacaoQueue` e `VerificarRecibosPush`: enviam notificações push
+  para o app mobile via Expo Push Service (veja
+  [Notificações push](#notificações-push)).
 
 ## O que este serviço faz
 
@@ -24,7 +28,10 @@ O documento é gravado na coleção `assistant` do banco definido em
 consumers_messaging/
 ├── README.md
 └── my_func_history/
-    ├── function_app.py
+    ├── function_app.py           # app + consumidor de histórico
+    ├── notifications.py          # blueprint das notificações push
+    ├── common.py                 # conexão MongoDB e leitura da fila
+    ├── tests/
     ├── host.json
     ├── requirements.txt
     ├── example-local.setting.json
@@ -180,6 +187,31 @@ Para testar o consumidor:
 Se não existir um documento com o par `user_id`/`chat_id`, a função gera erro
 para que a mensagem possa ser tratada novamente pela infraestrutura da fila.
 
+## Notificações push
+
+A API Python publica eventos na fila `aprovia-notifications` (prova publicada,
+material enviado ou envio avulso de admin) e mantém os aparelhos na coleção
+`push_tokens`. O formato do evento e das rotas está no Swagger da API.
+
+| Arquivo | Função | O que faz |
+|---|---|---|
+| `common.py` | `get_db()` / `decode_queue_body()` | Conexão MongoDB reaproveitada e leitura da mensagem (JSON ou JSON Base64), usadas também pelo histórico. |
+| `notifications.py` | `EnviarNotificacaoQueue` | Busca os tokens dos destinatários (`"all"` ou lista de `user_id`), envia ao Expo em lotes de 100 com `data.type` preenchido, remove tokens `DeviceNotRegistered` e grava os tickets aceitos em `push_tickets`. |
+| | `VerificarRecibosPush` | A cada 15 min, consulta os recibos dos tickets com mais de 15 min, remove os aparelhos desinstalados e registra os demais erros em log. |
+| | `EnviarLembreteDiario` | Uma vez por dia (`DAILY_REMINDER_SCHEDULE`, padrão 15h de Brasília), envia `daily_reminder` para quem tem aparelho em `push_tokens` e não tem `last_active_date` de hoje em `user_activity`. |
+| | `_expo_post()` | Até 3 tentativas com backoff em erro de rede, 429 e 5xx; outros 4xx falham na hora. |
+
+Ticket `ok` só indica que o Expo aceitou a mensagem; a entrega é confirmada no
+recibo, onde normalmente aparece `DeviceNotRegistered`. Os tickets expiram em
+24 h (índice TTL), mesmo prazo em que o Expo descarta os recibos.
+
+Se um lote falhar depois que outros já foram enviados, a mensagem volta para a
+fila e os aparelhos dos lotes anteriores podem receber a notificação de novo.
+
+O envio só funciona depois que o app tiver `projectId` do EAS e a credencial FCM
+V1 (Android) ou APNs (iOS) enviada ao Expo. Se a "enhanced push security" estiver
+ativa, configure `EXPO_ACCESS_TOKEN`.
+
 ## Variáveis de ambiente
 
 | Variável | Obrigatória | Uso |
@@ -189,6 +221,14 @@ para que a mensagem possa ser tratada novamente pela infraestrutura da fila.
 | `MONGO_DB_CONNECTION_STRING` | Sim | URI de conexão com MongoDB |
 | `MONGO_DB_NAME` | Sim | Banco que contém a coleção `assistant` |
 | `QUEUE_NAME` | Não | Nome da fila; padrão `aprovia-chat-history` |
+| `NOTIFICATIONS_QUEUE_NAME` | Não | Fila de notificações; padrão `aprovia-notifications` |
+| `PUSH_TOKENS_COLLECTION` | Não | Coleção dos tokens; padrão `push_tokens` |
+| `PUSH_TICKETS_COLLECTION` | Não | Coleção dos tickets pendentes; padrão `push_tickets` |
+| `EXPO_ACCESS_TOKEN` | Não | Token de acesso do Expo (enhanced push security) |
+| `EXPO_ANDROID_CHANNEL_ID` | Não | Canal Android; precisa existir no app. Sem ele, usa o padrão do Expo |
+| `USER_ACTIVITY_COLLECTION` | Não | Coleção com o último dia de uso (gravada pela API); padrão `user_activity` |
+| `REMINDER_TIMEZONE` | Não | Fuso que define "hoje"; igual ao da API. Padrão `America/Sao_Paulo` |
+| `DAILY_REMINDER_SCHEDULE` | Não | CRON do lembrete diário em **UTC**; padrão `0 0 18 * * *` (15h de Brasília) |
 
 Para desenvolvimento local, use:
 
@@ -219,8 +259,22 @@ identifique a mensagem como falha e aplique a política de retry configurada.
 
 ## Testes e validações
 
-Este diretório atualmente não possui uma suíte automatizada. Antes de abrir um
-PR, valide pelo menos:
+As notificações push têm testes unitários (sem MongoDB nem Expo reais):
+
+```bash
+cd my_func_history
+python -m unittest discover -s tests -t .
+```
+
+Os testes ficam em `my_func_history/tests/test_notifications.py` e usam mocks
+(MongoDB e `requests.post`); nada é enviado de verdade. Cobrem: leitura JSON e
+Base64, envio para todos ou por usuário, divisão em lotes de 100, remoção de
+`DeviceNotRegistered`, nova tentativa em erro de rede/503, desistência após 429
+repetido, nenhuma nova tentativa em 400, rejeição de evento inválido, a
+verificação de recibos e o lembrete diário (só para quem não usou o app hoje,
+no fuso de São Paulo).
+
+Para o consumidor de histórico, valide manualmente pelo menos:
 
 1. inicialização da Function sem erros;
 2. consumo de um JSON UTF-8;
@@ -232,7 +286,7 @@ PR, valide pelo menos:
 Para conferir a sintaxe do arquivo:
 
 ```bash
-python -m py_compile my_func_history/function_app.py
+python -m py_compile my_func_history/function_app.py my_func_history/notifications.py my_func_history/common.py
 ```
 
 ## Publicação na Azure
